@@ -11,7 +11,7 @@ router.get('/', requireAuth, async (req, res) => {
 
   let query = supabase
     .from('orders')
-    .select('*, profiles!seller_id(name)')
+    .select('*, seller:profiles!seller_id(name)')
     .eq('buyer_id', req.user.id)
     .order('created_at', { ascending: false })
 
@@ -36,7 +36,7 @@ router.get('/sales', requireAuth, async (req, res) => {
 
   let query = supabase
     .from('orders')
-    .select('*, profiles!buyer_id(name)')
+    .select('*, buyer:profiles!buyer_id(name)')
     .eq('seller_id', req.user.id)
     .order('created_at', { ascending: false })
 
@@ -56,18 +56,29 @@ router.get('/sales', requireAuth, async (req, res) => {
 
 // GET /orders/:id
 router.get('/:id', requireAuth, async (req, res) => {
-  const supabase = getUserClient(req.token)
-
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('orders')
-    .select('*, profiles!seller_id(name, rating, city), profiles!buyer_id(name)')
+    .select(`
+      *,
+      seller:profiles!seller_id(name, rating, city),
+      buyer:profiles!buyer_id(name)
+    `)
     .eq('id', req.params.id)
     .single()
 
   if (error) {
+    console.log('ORDER DETAIL ERROR:', error)
     return res.status(404).json({
       success: false,
-      error: { code: 'NOT_FOUND', message: 'Order not found' }
+      error: { code: 'NOT_FOUND', message: 'Order not found', detail: error.message }
+    })
+  }
+
+  // Cek user yg login adalah buyer atau seller dari order ini
+  if (data.buyer_id !== req.user.id && data.seller_id !== req.user.id) {
+    return res.status(403).json({
+      success: false,
+      error: { code: 'FORBIDDEN', message: 'Not your order' }
     })
   }
 
@@ -78,7 +89,6 @@ router.get('/:id', requireAuth, async (req, res) => {
 router.patch('/:id/cancel', requireAuth, async (req, res) => {
   const supabase = getUserClient(req.token)
 
-  // Validate buyer owns this order & status masih Diproses
   const { data: order } = await supabase
     .from('orders')
     .select('status, buyer_id')
@@ -157,11 +167,9 @@ router.patch('/:id/complete', requireAuth, async (req, res) => {
     })
   }
 
-  // Increment seller's total_sold
-  await supabaseAdmin.rpc('increment_total_sold', { seller: order.seller_id }).single()
-  // Note: kalo RPC ga ada, pake manual update di bawah:
-  // const { data: seller } = await supabaseAdmin.from('profiles').select('total_sold').eq('id', order.seller_id).single()
-  // await supabaseAdmin.from('profiles').update({ total_sold: (seller.total_sold || 0) + 1 }).eq('id', order.seller_id)
+  // Manual increment total_sold (skip RPC biar ga error)
+  const { data: seller } = await supabaseAdmin.from('profiles').select('total_sold').eq('id', order.seller_id).single()
+  await supabaseAdmin.from('profiles').update({ total_sold: (seller?.total_sold || 0) + 1 }).eq('id', order.seller_id)
 
   res.json({ success: true, data })
 })
@@ -210,7 +218,6 @@ router.patch('/sales/:id/ship', requireAuth, async (req, res) => {
     })
   }
 
-  // Notify buyer
   await supabaseAdmin.from('notifications').insert({
     user_id: order.buyer_id,
     type: 'order',

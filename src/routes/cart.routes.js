@@ -59,31 +59,37 @@ router.post('/', requireAuth, async (req, res) => {
 
 // PATCH /cart/:itemId
 router.patch('/:itemId', requireAuth, async (req, res) => {
-  const { qty } = req.body
+  try {
+    const { qty } = req.body
 
-  if (qty < 1) {
-    return res.status(400).json({
-      success: false,
-      error: { code: 'VALIDATION_ERROR', message: 'qty must be at least 1' }
-    })
+    // BUG-005 FIX: (undefined < 1) === false in JS, so qty check was silently bypassed
+    // Must explicitly check for undefined before the numeric comparison
+    if (qty === undefined || qty < 1) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'qty must be at least 1' }
+      })
+    }
+
+    const supabase = getUserClient(req.token)
+    const { data, error } = await supabase
+      .from('cart_items')
+      .update({ qty })
+      .eq('id', req.params.itemId)
+      .select()
+      .single()
+
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: error.message }
+      })
+    }
+
+    res.json({ success: true, data })
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: err.message } })
   }
-
-  const supabase = getUserClient(req.token)
-  const { data, error } = await supabase
-    .from('cart_items')
-    .update({ qty })
-    .eq('id', req.params.itemId)
-    .select()
-    .single()
-
-  if (error) {
-    return res.status(400).json({
-      success: false,
-      error: { code: 'VALIDATION_ERROR', message: error.message }
-    })
-  }
-
-  res.json({ success: true, data })
 })
 
 // DELETE /cart/:itemId

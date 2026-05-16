@@ -2,10 +2,20 @@ import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 dotenv.config();
 
-
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+
+// BUG-009 FIX: Validate required env variables at startup
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_KEY) {
+  throw new Error(
+    `Missing required Supabase environment variables: ${[
+      !SUPABASE_URL && 'SUPABASE_URL',
+      !SUPABASE_ANON_KEY && 'SUPABASE_ANON_KEY',
+      !SUPABASE_SERVICE_KEY && 'SUPABASE_SERVICE_KEY',
+    ].filter(Boolean).join(', ')}`
+  );
+}
 
 // Anonymous client — used for unauthenticated requests
 export const supabaseAnon = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);

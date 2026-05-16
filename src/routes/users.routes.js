@@ -56,6 +56,46 @@ router.get('/me/stats', requireAuth, async (req, res) => {
   })
 })
 
+// GET /users/me/products (seller's own listings, includes unavailable)
+router.get('/me/products', requireAuth, async (req, res) => {
+  const supabase = getUserClient(req.token)
+
+  const { data, error } = await supabase
+    .from('products')
+    .select('*, categories(name, slug, type)')
+    .eq('seller_id', req.user.id)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    return res.status(500).json({
+      success: false,
+      error: { code: 'SERVER_ERROR', message: error.message }
+    })
+  }
+
+  // Count active orders per product (Diproses + Dikirim) so the UI can show progress
+  const productIds = (data || []).map(p => p.id)
+  let pendingMap = {}
+  if (productIds.length) {
+    const { data: orders } = await supabaseAdmin
+      .from('orders')
+      .select('product_id, status')
+      .in('product_id', productIds)
+      .in('status', ['Diproses', 'Dikirim'])
+
+    for (const o of orders || []) {
+      pendingMap[o.product_id] = (pendingMap[o.product_id] || 0) + 1
+    }
+  }
+
+  const enriched = (data || []).map(p => ({
+    ...p,
+    pending_orders: pendingMap[p.id] || 0
+  }))
+
+  res.json({ success: true, data: enriched })
+})
+
 // GET /users/:id (public — info seller)
 router.get('/:id', async (req, res) => {
   const { data, error } = await supabaseAnon

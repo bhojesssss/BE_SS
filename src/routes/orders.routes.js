@@ -94,6 +94,70 @@ router.patch('/sales/:id/ship', requireAuth, async (req, res) => {
   }
 })
 
+// PATCH /orders/sales/:id/confirm — seller confirms a pending order
+router.patch('/sales/:id/confirm', requireAuth, async (req, res) => {
+  try {
+    const supabase = getUserClient(req.token)
+
+    // Fetch order first to validate
+    const { data: order, error: fetchErr } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('id', req.params.id)
+      .single()
+
+    if (fetchErr || !order) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Order tidak ditemukan' }
+      })
+    }
+
+    if (order.seller_id !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Bukan pesanan kamu' }
+      })
+    }
+
+    if (order.status !== 'Menunggu Konfirmasi') {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'INVALID_STATUS', message: 'Pesanan tidak bisa dikonfirmasi pada status ini' }
+      })
+    }
+
+    // Update status to Diproses
+    const { data: updated, error: updateErr } = await supabase
+      .from('orders')
+      .update({ status: 'Diproses' })
+      .eq('id', req.params.id)
+      .select()
+      .single()
+
+    if (updateErr) {
+      return res.status(500).json({
+        success: false,
+        error: { code: 'SERVER_ERROR', message: updateErr.message }
+      })
+    }
+
+    // Notify buyer that the order was confirmed
+    await supabaseAdmin.from('notifications').insert({
+      user_id: order.buyer_id,
+      type: 'order',
+      title: 'Pesanan Dikonfirmasi',
+      message: 'Penjual telah mengkonfirmasi pesananmu',
+      link: '/profile/history',
+      link_label: 'Lihat Pesanan'
+    })
+
+    res.json({ success: true, data: updated })
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: err.message } })
+  }
+})
+
 // GET /orders?status=Dikirim (buyer history)
 router.get('/', requireAuth, async (req, res) => {
   try {
@@ -176,10 +240,10 @@ router.patch('/:id/cancel', requireAuth, async (req, res) => {
       })
     }
 
-    if (order.status !== 'Diproses') {
+    if (!['Diproses', 'Menunggu Konfirmasi'].includes(order.status)) {
       return res.status(400).json({
         success: false,
-        error: { code: 'VALIDATION_ERROR', message: 'Can only cancel orders in Diproses status' }
+        error: { code: 'INVALID_STATUS', message: 'Pesanan tidak bisa dibatalkan pada status ini' }
       })
     }
 

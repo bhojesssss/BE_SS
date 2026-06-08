@@ -121,6 +121,7 @@ router.post("/checkout", requireAuth, async (req, res) => {
   const ordersWithTx = ordersToCreate.map((o) => ({
     ...o,
     transaction_id: transaction.id,
+    status: "Menunggu Konfirmasi",
   }));
   const { data: createdOrders, error: orderError } = await supabaseAdmin
     .from("orders")
@@ -134,6 +135,21 @@ router.post("/checkout", requireAuth, async (req, res) => {
       success: false,
       error: { code: "SERVER_ERROR", message: orderError.message },
     });
+  }
+
+  // Notify each unique seller about the new pending order
+  const uniqueSellerIds = [...new Set(createdOrders.map((o) => o.seller_id))];
+  const notifications = uniqueSellerIds.map((sellerId) => ({
+    user_id: sellerId,
+    type: "order",
+    title: "Pesanan Baru",
+    message: "Ada pesanan menunggu konfirmasi kamu",
+    link: "/profile/sales",
+    link_label: "Lihat Pesanan",
+  }));
+
+  if (notifications.length > 0) {
+    await supabaseAdmin.from("notifications").insert(notifications);
   }
 
   // Clear cart items yang udah di-checkout

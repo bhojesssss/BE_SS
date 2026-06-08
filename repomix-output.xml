@@ -1,0 +1,2092 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+.gitignore
+package.json
+src/config/supabase.js
+src/index.js
+src/middleware/auth.js
+src/middleware/errorHandler.js
+src/routes/addresses.routes.js
+src/routes/auth.routes.js
+src/routes/cart.routes.js
+src/routes/categories.routes.js
+src/routes/chats.routes.js
+src/routes/notification.routes.js
+src/routes/orders.routes.js
+src/routes/products.routes.js
+src/routes/reviews.routes.js
+src/routes/transaction.routes.js
+src/routes/users.routes.js
+src/routes/wishlist.routes.js
+vercel.json
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".gitignore">
+.env
+node_modules/
+.DS_Store
+.claude
+CLAUDE.md
+</file>
+
+<file path="package.json">
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "The backend and business service of Second Space",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bhojesssss/BE_SS.git"
+  },
+  "keywords": [
+    "nothing"
+  ],
+  "author": "bhojessss",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/bhojesssss/BE_SS/issues"
+  },
+  "homepage": "https://github.com/bhojesssss/BE_SS#readme",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.105.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "zod": "^4.4.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
+</file>
+
+<file path="src/middleware/auth.js">
+import { supabaseAnon } from "../config/supabase.js";
+
+export const requireAuth = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    return res.status(401).json({
+      success: false,
+      error: { code: "UNAUTHORIZED", message: "Missing token" },
+    });
+  }
+
+  const token = authHeader.split(" ")[1];
+  const { data, error } = await supabaseAnon.auth.getUser(token);
+
+  if (error || !data.user) {
+    return res.status(401).json({
+      success: false,
+      error: { code: "UNAUTHORIZED", message: "Invalid token" },
+    });
+  }
+
+  req.user = data.user;
+  req.token = token;
+  next();
+};
+</file>
+
+<file path="src/middleware/errorHandler.js">
+export const errorHandler = (err, req, res, next) => {
+  console.error("[ERROR]", err);
+  res.status(err.status || 500).json({
+    success: false,
+    error: {
+      code: err.code || "SERVER_ERROR",
+      message: err.message || "Something went wrong",
+    },
+  });
+};
+</file>
+
+<file path="src/routes/addresses.routes.js">
+import { Router } from 'express'
+import { getUserClient, supabaseAdmin } from '../config/supabase.js'
+import { requireAuth } from '../middleware/auth.js'
+
+const router = Router()
+
+// GET /addresses
+router.get('/', requireAuth, async (req, res) => {
+  const supabase = getUserClient(req.token)
+  const { data, error } = await supabase
+    .from('addresses')
+    .select('*')
+    .order('is_default', { ascending: false })
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    return res.status(500).json({
+      success: false,
+      error: { code: 'SERVER_ERROR', message: error.message }
+    })
+  }
+
+  res.json({ success: true, data })
+})
+
+// POST /addresses
+router.post('/', requireAuth, async (req, res) => {
+  const { label, recipient, phone, full_address, is_default } = req.body
+
+  if (!label || !recipient || !phone || !full_address) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: 'Missing required fields' }
+    })
+  }
+
+  const supabase = getUserClient(req.token)
+
+  // Kalo set as default, unset default sebelumnya
+  if (is_default) {
+    await supabase.from('addresses').update({ is_default: false }).eq('user_id', req.user.id)
+  }
+
+  const { data, error } = await supabase
+    .from('addresses')
+    .insert({
+      user_id: req.user.id,
+      label,
+      recipient,
+      phone,
+      full_address,
+      is_default: is_default || false
+    })
+    .select()
+    .single()
+
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: error.message }
+    })
+  }
+
+  res.json({ success: true, data })
+})
+
+// PATCH /addresses/:id
+router.patch('/:id', requireAuth, async (req, res) => {
+  const supabase = getUserClient(req.token)
+  const { data, error } = await supabase
+    .from('addresses')
+    .update(req.body)
+    .eq('id', req.params.id)
+    .select()
+    .single()
+
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: error.message }
+    })
+  }
+
+  res.json({ success: true, data })
+})
+
+// DELETE /addresses/:id
+router.delete('/:id', requireAuth, async (req, res) => {
+  const supabase = getUserClient(req.token)
+  const { error } = await supabase.from('addresses').delete().eq('id', req.params.id)
+
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: error.message }
+    })
+  }
+
+  res.json({ success: true, data: { message: 'Deleted' } })
+})
+
+// PATCH /addresses/:id/default
+router.patch('/:id/default', requireAuth, async (req, res) => {
+  const supabase = getUserClient(req.token)
+
+  // Unset all defaults first
+  await supabase.from('addresses').update({ is_default: false }).eq('user_id', req.user.id)
+
+  // Set this one as default
+  const { data, error } = await supabase
+    .from('addresses')
+    .update({ is_default: true })
+    .eq('id', req.params.id)
+    .select()
+    .single()
+
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: error.message }
+    })
+  }
+
+  res.json({ success: true, data })
+})
+
+export default router
+</file>
+
+<file path="src/routes/categories.routes.js">
+import { Router } from 'express'
+import { supabaseAnon } from '../config/supabase.js'
+
+const router = Router()
+
+// GET /categories?type=fashion
+router.get('/', async (req, res) => {
+  const { type } = req.query
+
+  let query = supabaseAnon.from('categories').select('*').order('id')
+  if (type) query = query.eq('type', type)
+
+  const { data, error } = await query
+  if (error) {
+    return res.status(500).json({
+      success: false,
+      error: { code: 'SERVER_ERROR', message: error.message }
+    })
+  }
+
+  res.json({ success: true, data })
+})
+
+export default router
+</file>
+
+<file path="src/routes/chats.routes.js">
+import { Router } from 'express'
+import { getUserClient, supabaseAdmin } from '../config/supabase.js'
+import { requireAuth } from '../middleware/auth.js'
+
+const router = Router()
+
+// GET /chats
+router.get('/', requireAuth, async (req, res) => {
+  const supabase = getUserClient(req.token)
+  const userId = req.user.id
+
+  const { data, error } = await supabase
+    .from('chats')
+    .select(`
+      *,
+      buyer:profiles!buyer_id(id, name, avatar_url),
+      seller:profiles!seller_id(id, name, avatar_url),
+      products(id, name, price, images)
+    `)
+    .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`)
+    .order('last_message_at', { ascending: false })
+
+  if (error) {
+    return res.status(500).json({
+      success: false,
+      error: { code: 'SERVER_ERROR', message: error.message }
+    })
+  }
+
+  // Add helper field: who's the "other" party from current user's POV
+  const chats = data.map(chat => ({
+    ...chat,
+    is_buyer: chat.buyer_id === userId,
+    other_user: chat.buyer_id === userId ? chat.seller : chat.buyer,
+    unread: chat.buyer_id === userId ? chat.buyer_unread : chat.seller_unread
+  }))
+
+  res.json({ success: true, data: chats })
+})
+
+// POST /chats — start new chat
+router.post('/', requireAuth, async (req, res) => {
+  const { seller_id, product_id } = req.body
+
+  if (!seller_id) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: 'seller_id required' }
+    })
+  }
+
+  if (seller_id === req.user.id) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: 'Cannot chat with yourself' }
+    })
+  }
+
+  const supabase = getUserClient(req.token)
+
+  // Cek kalo chat udah ada (unique constraint buyer+seller+product)
+  const { data: existing } = await supabase
+    .from('chats')
+    .select('*')
+    .eq('buyer_id', req.user.id)
+    .eq('seller_id', seller_id)
+    .eq('product_id', product_id || null)
+    .maybeSingle()
+
+  if (existing) {
+    return res.json({ success: true, data: existing })
+  }
+
+  const { data, error } = await supabase
+    .from('chats')
+    .insert({
+      buyer_id: req.user.id,
+      seller_id,
+      product_id: product_id || null
+    })
+    .select()
+    .single()
+
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: error.message }
+    })
+  }
+
+  res.json({ success: true, data })
+})
+
+// GET /chats/:id
+router.get('/:id', requireAuth, async (req, res) => {
+  const supabase = getUserClient(req.token)
+  const userId = req.user.id
+
+  const { data, error } = await supabase
+    .from('chats')
+    .select(`
+      *,
+      buyer:profiles!buyer_id(id, name, avatar_url),
+      seller:profiles!seller_id(id, name, avatar_url),
+      products(id, name, price, images)
+    `)
+    .eq('id', req.params.id)
+    .single()
+
+  if (error) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'Chat not found' }
+    })
+  }
+
+  res.json({
+    success: true,
+    data: {
+      ...data,
+      is_buyer: data.buyer_id === userId,
+      other_user: data.buyer_id === userId ? data.seller : data.buyer
+    }
+  })
+})
+
+// GET /chats/:id/messages
+router.get('/:id/messages', requireAuth, async (req, res) => {
+  const supabase = getUserClient(req.token)
+
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('chat_id', req.params.id)
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    return res.status(500).json({
+      success: false,
+      error: { code: 'SERVER_ERROR', message: error.message }
+    })
+  }
+
+  res.json({ success: true, data })
+})
+
+// POST /chats/:id/messages
+router.post('/:id/messages', requireAuth, async (req, res) => {
+  const { text } = req.body
+
+  if (!text?.trim()) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: 'Message text required' }
+    })
+  }
+
+  const supabase = getUserClient(req.token)
+
+  // Get chat info untuk update unread counter
+  const { data: chat } = await supabaseAdmin
+    .from('chats')
+    .select('buyer_id, seller_id, buyer_unread, seller_unread')
+    .eq('id', req.params.id)
+    .single()
+
+  if (!chat) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'Chat not found' }
+    })
+  }
+
+  // Insert message
+  const { data: message, error } = await supabase
+    .from('messages')
+    .insert({
+      chat_id: req.params.id,
+      sender_id: req.user.id,
+      text: text.trim()
+    })
+    .select()
+    .single()
+
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: error.message }
+    })
+  }
+
+  // Update chat: last_message, unread counter (yang nerima)
+  const isFromBuyer = req.user.id === chat.buyer_id
+  await supabaseAdmin
+    .from('chats')
+    .update({
+      last_message: text.trim(),
+      last_message_at: new Date().toISOString(),
+      buyer_unread: isFromBuyer ? chat.buyer_unread : (chat.buyer_unread || 0) + 1,
+      seller_unread: isFromBuyer ? (chat.seller_unread || 0) + 1 : chat.seller_unread
+    })
+    .eq('id', req.params.id)
+
+  res.json({ success: true, data: message })
+})
+
+// PATCH /chats/:id/read
+router.patch('/:id/read', requireAuth, async (req, res) => {
+  const supabase = getUserClient(req.token)
+
+  const { data: chat } = await supabaseAdmin
+    .from('chats')
+    .select('buyer_id, seller_id')
+    .eq('id', req.params.id)
+    .single()
+
+  if (!chat) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'Chat not found' }
+    })
+  }
+
+  const isBuyer = req.user.id === chat.buyer_id
+  const updateField = isBuyer ? { buyer_unread: 0 } : { seller_unread: 0 }
+
+  const { data, error } = await supabase
+    .from('chats')
+    .update(updateField)
+    .eq('id', req.params.id)
+    .select()
+    .single()
+
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: error.message }
+    })
+  }
+
+  // Mark all messages as read
+  await supabaseAdmin
+    .from('messages')
+    .update({ is_read: true })
+    .eq('chat_id', req.params.id)
+    .neq('sender_id', req.user.id)
+
+  res.json({ success: true, data })
+})
+
+export default router
+</file>
+
+<file path="src/routes/products.routes.js">
+import { Router } from 'express'
+import { supabaseAnon, getUserClient } from '../config/supabase.js'
+import { requireAuth } from '../middleware/auth.js'
+import reviewsRoutes from './reviews.routes.js'
+
+const router = Router()
+router.use('/:id/reviews', reviewsRoutes)
+
+// GET /products?type=fashion&category=t-shirts&q=keyword&sort=newest&page=1&limit=20
+router.get('/', async (req, res) => {
+  const { type, category, q, sort = 'newest', page = 1, limit = 20 } = req.query
+
+  let query = supabaseAnon
+    .from('products')
+    .select('*, categories!inner(name, slug, type), profiles!seller_id(name, rating, city)')
+    .eq('is_available', true)
+
+  if (type) query = query.eq('categories.type', type)
+  if (category) query = query.eq('categories.slug', category)
+  if (q) query = query.ilike('name', `%${q}%`)
+
+  if (sort === 'price-asc') query = query.order('price', { ascending: true })
+  else if (sort === 'price-desc') query = query.order('price', { ascending: false })
+  else if (sort === 'popular') query = query.order('sold_count', { ascending: false })
+  else query = query.order('created_at', { ascending: false })
+
+  const from = (page - 1) * limit
+  const to = from + limit - 1
+  query = query.range(from, to)
+
+  const { data, error } = await query
+  if (error) {
+    return res.status(500).json({
+      success: false,
+      error: { code: 'SERVER_ERROR', message: error.message }
+    })
+  }
+
+  res.json({ success: true, data })
+})
+
+// GET /products/recommended
+router.get('/recommended', async (req, res) => {
+  const { data, error } = await supabaseAnon
+    .from('products')
+    .select('*, categories(name, slug, type)')
+    .eq('is_available', true)
+    .order('sold_count', { ascending: false })
+    .limit(8)
+
+  if (error) {
+    return res.status(500).json({
+      success: false,
+      error: { code: 'SERVER_ERROR', message: error.message }
+    })
+  }
+
+  res.json({ success: true, data })
+})
+
+// GET /products/:id
+router.get('/:id', async (req, res) => {
+  const { data, error } = await supabaseAnon
+    .from('products')
+    .select('*, categories(name, slug, type), profiles!seller_id(id, name, rating, city, total_sold)')
+    .eq('id', req.params.id)
+    .single()
+
+  if (error) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'Product not found' }
+    })
+  }
+
+  res.json({ success: true, data })
+})
+
+// POST /products
+router.post('/', requireAuth, async (req, res) => {
+  const { name, description, price, category_id, condition, size, images } = req.body
+
+  if (!name || !price || !category_id || !condition || !size) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: 'Missing required fields' }
+    })
+  }
+
+  const supabase = getUserClient(req.token)
+  const { data, error } = await supabase
+    .from('products')
+    .insert({
+      seller_id: req.user.id,
+      name,
+      description,
+      price,
+      category_id,
+      condition,
+      size,
+      images: images || []
+    })
+    .select()
+    .single()
+
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: error.message }
+    })
+  }
+
+  res.json({ success: true, data })
+})
+
+// PATCH /products/:id
+router.patch('/:id', requireAuth, async (req, res) => {
+  const supabase = getUserClient(req.token)
+  const { data, error } = await supabase
+    .from('products')
+    .update({ ...req.body, updated_at: new Date().toISOString() })
+    .eq('id', req.params.id)
+    .select()
+    .single()
+
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: error.message }
+    })
+  }
+
+  res.json({ success: true, data })
+})
+
+// DELETE /products/:id
+router.delete('/:id', requireAuth, async (req, res) => {
+  const supabase = getUserClient(req.token)
+  const { error } = await supabase.from('products').delete().eq('id', req.params.id)
+
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: error.message }
+    })
+  }
+
+  res.json({ success: true, data: { message: 'Deleted' } })
+})
+
+export default router
+</file>
+
+<file path="src/routes/reviews.routes.js">
+import { Router } from 'express'
+import { supabaseAnon, getUserClient, supabaseAdmin } from '../config/supabase.js'
+import { requireAuth } from '../middleware/auth.js'
+
+const router = Router({ mergeParams: true })
+
+// GET /products/:id/reviews
+router.get('/', async (req, res) => {
+  const { data, error } = await supabaseAnon
+    .from('reviews')
+    .select('*, profiles!buyer_id(name, avatar_url)')
+    .eq('product_id', req.params.id)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    return res.status(500).json({
+      success: false,
+      error: { code: 'SERVER_ERROR', message: error.message }
+    })
+  }
+
+  // Calculate average rating
+  const avgRating = data.length
+    ? data.reduce((sum, r) => sum + r.rating, 0) / data.length
+    : 0
+
+  res.json({
+    success: true,
+    data: {
+      reviews: data,
+      total: data.length,
+      average_rating: Math.round(avgRating * 10) / 10
+    }
+  })
+})
+
+// POST /products/:id/reviews
+router.post('/', requireAuth, async (req, res) => {
+  const { order_id, rating, comment } = req.body
+
+  if (!order_id || !rating) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: 'order_id and rating required' }
+    })
+  }
+
+  if (rating < 1 || rating > 5) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: 'Rating must be 1-5' }
+    })
+  }
+
+  // Validate: order belongs to user, status = Selesai, product matches
+  const { data: order } = await supabaseAdmin
+    .from('orders')
+    .select('id, buyer_id, seller_id, product_id, status')
+    .eq('id', order_id)
+    .single()
+
+  if (!order || order.buyer_id !== req.user.id) {
+    return res.status(403).json({
+      success: false,
+      error: { code: 'FORBIDDEN', message: 'Not your order' }
+    })
+  }
+
+  if (order.status !== 'Selesai') {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: 'Can only review completed orders' }
+    })
+  }
+
+  if (order.product_id !== req.params.id) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: 'Product mismatch' }
+    })
+  }
+
+  const supabase = getUserClient(req.token)
+
+  const { data, error } = await supabase
+    .from('reviews')
+    .insert({
+      order_id,
+      product_id: req.params.id,
+      buyer_id: req.user.id,
+      seller_id: order.seller_id,
+      rating,
+      comment
+    })
+    .select()
+    .single()
+
+  if (error) {
+    if (error.code === '23505') {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'Already reviewed this order' }
+      })
+    }
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: error.message }
+    })
+  }
+
+  // Update seller's average rating
+  const { data: allReviews } = await supabaseAdmin
+    .from('reviews')
+    .select('rating')
+    .eq('seller_id', order.seller_id)
+
+  if (allReviews?.length) {
+    const avgRating = allReviews.reduce((sum, r) => sum + r.rating, 0) / allReviews.length
+    await supabaseAdmin
+      .from('profiles')
+      .update({ rating: Math.round(avgRating * 10) / 10 })
+      .eq('id', order.seller_id)
+  }
+
+  res.json({ success: true, data })
+})
+
+export default router
+</file>
+
+<file path="src/routes/wishlist.routes.js">
+import { Router } from 'express'
+import { getUserClient } from '../config/supabase.js'
+import { requireAuth } from '../middleware/auth.js'
+
+const router = Router()
+
+// GET /wishlist
+router.get('/', requireAuth, async (req, res) => {
+  const supabase = getUserClient(req.token)
+  const { data, error } = await supabase
+    .from('wishlist')
+    .select('*, products(*, categories(name, slug, type), profiles!seller_id(name, rating))')
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    return res.status(500).json({
+      success: false,
+      error: { code: 'SERVER_ERROR', message: error.message }
+    })
+  }
+
+  res.json({ success: true, data })
+})
+
+// POST /wishlist/:productId
+router.post('/:productId', requireAuth, async (req, res) => {
+  const supabase = getUserClient(req.token)
+
+  const { data, error } = await supabase
+    .from('wishlist')
+    .insert({
+      user_id: req.user.id,
+      product_id: req.params.productId
+    })
+    .select()
+    .single()
+
+  if (error) {
+    // Kemungkinan duplicate (unique constraint)
+    if (error.code === '23505') {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'Already in wishlist' }
+      })
+    }
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: error.message }
+    })
+  }
+
+  res.json({ success: true, data })
+})
+
+// DELETE /wishlist/:productId
+router.delete('/:productId', requireAuth, async (req, res) => {
+  const supabase = getUserClient(req.token)
+  const { error } = await supabase
+    .from('wishlist')
+    .delete()
+    .eq('user_id', req.user.id)
+    .eq('product_id', req.params.productId)
+
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: error.message }
+    })
+  }
+
+  res.json({ success: true, data: { message: 'Removed from wishlist' } })
+})
+
+export default router
+</file>
+
+<file path="vercel.json">
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "src/index.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "src/index.js"
+    }
+  ]
+}
+</file>
+
+<file path="src/config/supabase.js">
+import { createClient } from "@supabase/supabase-js";
+import dotenv from "dotenv";
+dotenv.config();
+
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+
+// BUG-009 FIX: Validate required env variables at startup
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_KEY) {
+  throw new Error(
+    `Missing required Supabase environment variables: ${[
+      !SUPABASE_URL && 'SUPABASE_URL',
+      !SUPABASE_ANON_KEY && 'SUPABASE_ANON_KEY',
+      !SUPABASE_SERVICE_KEY && 'SUPABASE_SERVICE_KEY',
+    ].filter(Boolean).join(', ')}`
+  );
+}
+
+// Anonymous client — used for unauthenticated requests
+export const supabaseAnon = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Admin client — bypasses RLS, use carefully (server only!)
+export const supabaseAdmin = createClient(
+  SUPABASE_URL,
+  SUPABASE_SERVICE_KEY,
+  {
+    auth: { autoRefreshToken: false, persistSession: false },
+  },
+);
+
+// User-scoped client — respects RLS by forwarding user JWT
+export const getUserClient = (userJWT) => {
+  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: `Bearer ${userJWT}` } },
+  });
+};
+</file>
+
+<file path="src/index.js">
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+
+import authRoutes from "./routes/auth.routes.js";
+import productsRoutes from "./routes/products.routes.js";
+import categoriesRoutes from "./routes/categories.routes.js";
+import usersRoutes from './routes/users.routes.js';
+import addressesRoutes from './routes/addresses.routes.js';
+import wishlistRoutes from './routes/wishlist.routes.js';
+import chatsRoutes from './routes/chats.routes.js';
+import notificationsRoutes from './routes/notification.routes.js';
+import transactionsRoutes from './routes/transaction.routes.js';
+import cartRoutes from './routes/cart.routes.js';
+import ordersRoutes from './routes/orders.routes.js';
+// ... import other routes nanti
+import { errorHandler } from "./middleware/errorHandler.js";
+
+dotenv.config();
+const app = express();
+
+const allowedOrigins = [
+  'http://localhost:5173',
+  process.env.FRONTEND_URL,
+].filter(Boolean)
+
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true
+}))
+app.use(express.json());
+
+// Health check
+app.get("/", (req, res) => res.json({ ok: true, message: "SecondSpace API" }));
+
+// Routes
+app.use("/auth", authRoutes);
+app.use("/products", productsRoutes);
+app.use("/categories", categoriesRoutes);
+app.use('/users', usersRoutes);
+app.use('/addresses', addressesRoutes);
+app.use('/wishlist', wishlistRoutes);
+app.use('/chats', chatsRoutes);
+app.use('/notifications', notificationsRoutes);
+app.use('/transactions', transactionsRoutes);
+app.use('/cart', cartRoutes);
+app.use('/orders', ordersRoutes);
+// ... use other routes nanti
+
+app.use(errorHandler);
+
+// Local development
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 3000
+  app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`))
+}
+
+// Vercel serverless export
+export default app
+</file>
+
+<file path="src/routes/auth.routes.js">
+import { Router } from "express";
+import { supabaseAnon, supabaseAdmin } from "../config/supabase.js";
+import { requireAuth } from "../middleware/auth.js";
+
+const router = Router();
+
+// POST /auth/register
+router.post("/register", async (req, res) => {
+  try {
+    const { name, email, password, phone } = req.body;
+
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Name, email, password required",
+        },
+      });
+    }
+
+    const { data, error } = await supabaseAnon.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { name, phone },
+      },
+    });
+
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        error: { code: "VALIDATION_ERROR", message: error.message },
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        user: data.user,
+        session: data.session,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: err.message } });
+  }
+});
+
+// POST /auth/login
+router.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    const { data, error } = await supabaseAnon.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      return res.status(401).json({
+        success: false,
+        error: { code: "UNAUTHORIZED", message: error.message },
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        user: data.user,
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: err.message } });
+  }
+});
+
+// POST /auth/logout
+// BUG-002 FIX: supabaseAnon.auth.admin doesn't exist — use supabaseAdmin instead
+router.post("/logout", requireAuth, async (req, res) => {
+  try {
+    await supabaseAdmin.auth.admin.signOut(req.token);
+    res.json({ success: true, data: { message: "Logged out" } });
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: err.message } });
+  }
+});
+
+// GET /auth/me
+router.get("/me", requireAuth, async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("profiles")
+      .select("*")
+      .eq("id", req.user.id)
+      .single();
+
+    if (error) {
+      return res.status(404).json({
+        success: false,
+        error: { code: "NOT_FOUND", message: "Profile not found" },
+      });
+    }
+
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: err.message } });
+  }
+});
+
+export default router;
+</file>
+
+<file path="src/routes/cart.routes.js">
+import { Router } from 'express'
+import { getUserClient } from '../config/supabase.js'
+import { requireAuth } from '../middleware/auth.js'
+
+const router = Router()
+
+// GET /cart
+router.get('/', requireAuth, async (req, res) => {
+  const supabase = getUserClient(req.token)
+  const { data, error } = await supabase
+    .from('cart_items')
+    .select('*, products(id, name, price, images, seller_id, profiles!seller_id(name))')
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    return res.status(500).json({
+      success: false,
+      error: { code: 'SERVER_ERROR', message: error.message }
+    })
+  }
+
+  res.json({ success: true, data })
+})
+
+// POST /cart
+router.post('/', requireAuth, async (req, res) => {
+  const { product_id, size, condition, qty } = req.body
+
+  if (!product_id || !size || !condition) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: 'product_id, size, condition required' }
+    })
+  }
+
+  const supabase = getUserClient(req.token)
+
+  const { data, error } = await supabase
+    .from('cart_items')
+    .insert({
+      user_id: req.user.id,
+      product_id,
+      size,
+      condition,
+      qty: qty || 1
+    })
+    .select('*, products(id, name, price, images)')
+    .single()
+
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: error.message }
+    })
+  }
+
+  res.json({ success: true, data })
+})
+
+// PATCH /cart/:itemId
+router.patch('/:itemId', requireAuth, async (req, res) => {
+  try {
+    const { qty } = req.body
+
+    // BUG-005 FIX: (undefined < 1) === false in JS, so qty check was silently bypassed
+    // Must explicitly check for undefined before the numeric comparison
+    if (qty === undefined || qty < 1) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'qty must be at least 1' }
+      })
+    }
+
+    const supabase = getUserClient(req.token)
+    const { data, error } = await supabase
+      .from('cart_items')
+      .update({ qty })
+      .eq('id', req.params.itemId)
+      .select()
+      .single()
+
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: error.message }
+      })
+    }
+
+    res.json({ success: true, data })
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: err.message } })
+  }
+})
+
+// DELETE /cart/:itemId
+router.delete('/:itemId', requireAuth, async (req, res) => {
+  const supabase = getUserClient(req.token)
+  const { error } = await supabase.from('cart_items').delete().eq('id', req.params.itemId)
+
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: error.message }
+    })
+  }
+
+  res.json({ success: true, data: { message: 'Item removed' } })
+})
+
+// DELETE /cart (clear all)
+router.delete('/', requireAuth, async (req, res) => {
+  const supabase = getUserClient(req.token)
+  const { error } = await supabase.from('cart_items').delete().eq('user_id', req.user.id)
+
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: error.message }
+    })
+  }
+
+  res.json({ success: true, data: { message: 'Cart cleared' } })
+})
+
+export default router
+</file>
+
+<file path="src/routes/notification.routes.js">
+import { Router } from 'express'
+import { getUserClient, supabaseAdmin } from '../config/supabase.js'
+import { requireAuth } from '../middleware/auth.js'
+
+const router = Router()
+
+// GET /notifications
+router.get('/', requireAuth, async (req, res) => {
+  try {
+    const { type, unread } = req.query
+    const supabase = getUserClient(req.token)
+
+    let query = supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', req.user.id)
+      .order('created_at', { ascending: false })
+
+    if (type) query = query.eq('type', type)
+    if (unread === 'true') query = query.eq('is_read', false)
+
+    const { data, error } = await query
+
+    if (error) {
+      return res.status(500).json({
+        success: false,
+        error: { code: 'SERVER_ERROR', message: error.message }
+      })
+    }
+
+    // Get unread count
+    const { count: unreadCount } = await supabase
+      .from('notifications')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', req.user.id)
+      .eq('is_read', false)
+
+    res.json({
+      success: true,
+      data: {
+        notifications: data,
+        unread_count: unreadCount || 0
+      }
+    })
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: err.message } })
+  }
+})
+
+// BUG-003 FIX: PATCH /read-all MUST be declared BEFORE PATCH /:id/read
+// Otherwise Express matches "read-all" as an :id param and this handler is never reached
+router.patch('/read-all', requireAuth, async (req, res) => {
+  try {
+    const supabase = getUserClient(req.token)
+
+    const { error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('user_id', req.user.id)
+      .eq('is_read', false)
+
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: error.message }
+      })
+    }
+
+    res.json({ success: true, data: { message: 'All marked as read' } })
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: err.message } })
+  }
+})
+
+// GET /notifications/:id
+router.get('/:id', requireAuth, async (req, res) => {
+  try {
+    const supabase = getUserClient(req.token)
+
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('id', req.params.id)
+      .single()
+
+    if (error) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Notification not found' }
+      })
+    }
+
+    // Auto-mark as read when opened
+    if (!data.is_read) {
+      await supabase.from('notifications').update({ is_read: true }).eq('id', req.params.id)
+      data.is_read = true
+    }
+
+    res.json({ success: true, data })
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: err.message } })
+  }
+})
+
+// PATCH /notifications/:id/read
+router.patch('/:id/read', requireAuth, async (req, res) => {
+  try {
+    const supabase = getUserClient(req.token)
+
+    const { data, error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('id', req.params.id)
+      .select()
+      .single()
+
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: error.message }
+      })
+    }
+
+    res.json({ success: true, data })
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: err.message } })
+  }
+})
+
+export default router
+</file>
+
+<file path="src/routes/transaction.routes.js">
+import { Router } from "express";
+import { getUserClient, supabaseAdmin } from "../config/supabase.js";
+import { requireAuth } from "../middleware/auth.js";
+
+const router = Router();
+
+// POST /transactions/checkout
+router.post("/checkout", requireAuth, async (req, res) => {
+  const { items, address_id, payment_method, notes } = req.body;
+  // items: [{ product_id, size, condition, qty }]
+
+  if (!items?.length || !address_id || !payment_method) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: "VALIDATION_ERROR",
+        message: "items, address_id, payment_method required",
+      },
+    });
+  }
+
+  // Validate address ownership
+  const { data: address } = await supabaseAdmin
+    .from("addresses")
+    .select("id")
+    .eq("id", address_id)
+    .eq("user_id", req.user.id)
+    .single();
+
+  if (!address) {
+    return res.status(403).json({
+      success: false,
+      error: { code: "FORBIDDEN", message: "Invalid address" },
+    });
+  }
+
+  // Fetch product details (price, seller_id, name, image)
+  const productIds = items.map((i) => i.product_id);
+  const { data: products, error: prodError } = await supabaseAdmin
+    .from("products")
+    .select("id, name, price, seller_id, images, is_available")
+    .in("id", productIds);
+
+  if (prodError || !products?.length) {
+    return res.status(400).json({
+      success: false,
+      error: { code: "VALIDATION_ERROR", message: "Products not found" },
+    });
+  }
+
+  // Check availability
+  const unavailable = products.find((p) => !p.is_available);
+  if (unavailable) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: "VALIDATION_ERROR",
+        message: `Product "${unavailable.name}" no longer available`,
+      },
+    });
+  }
+
+  // Calculate subtotal
+  let subtotal = 0;
+  let ordersToCreate;
+  try {
+    // BUG-006 FIX: throw inside .map() without try/catch causes unhandled rejection
+    // Wrapped in try/catch to return a clean 400 response on product mismatch
+    ordersToCreate = items.map((item) => {
+      const product = products.find((p) => p.id === item.product_id);
+      if (!product) throw new Error(`Product ${item.product_id} not found`);
+      const itemTotal = product.price * item.qty;
+      subtotal += itemTotal;
+
+      return {
+        buyer_id: req.user.id,
+        seller_id: product.seller_id,
+        product_id: product.id,
+        product_name: product.name,
+        product_image: product.images?.[0] || null,
+        price: product.price,
+        size: item.size,
+        condition: item.condition,
+        qty: item.qty,
+        total: itemTotal,
+      };
+    });
+  } catch (mapErr) {
+    return res.status(400).json({
+      success: false,
+      error: { code: "VALIDATION_ERROR", message: mapErr.message },
+    });
+  }
+
+  const service_fee = Math.round(subtotal * 0.01);
+  const total = subtotal + service_fee;
+
+  // Create transaction (use admin client biar bisa generate id otomatis)
+  const { data: transaction, error: txError } = await supabaseAdmin
+    .from("transactions")
+    .insert({
+      buyer_id: req.user.id,
+      address_id,
+      payment_method,
+      notes,
+      subtotal,
+      service_fee,
+      total,
+    })
+    .select()
+    .single();
+
+  if (txError) {
+    return res.status(500).json({
+      success: false,
+      error: { code: "SERVER_ERROR", message: txError.message },
+    });
+  }
+
+  // Create orders (link to transaction)
+  const ordersWithTx = ordersToCreate.map((o) => ({
+    ...o,
+    transaction_id: transaction.id,
+  }));
+  const { data: createdOrders, error: orderError } = await supabaseAdmin
+    .from("orders")
+    .insert(ordersWithTx)
+    .select();
+
+  if (orderError) {
+    // Rollback transaction kalo orders gagal dibuat
+    await supabaseAdmin.from("transactions").delete().eq("id", transaction.id);
+    return res.status(500).json({
+      success: false,
+      error: { code: "SERVER_ERROR", message: orderError.message },
+    });
+  }
+
+  // Clear cart items yang udah di-checkout
+  const supabase = getUserClient(req.token);
+  await supabase
+    .from("cart_items")
+    .delete()
+    .eq("user_id", req.user.id)
+    .in("product_id", productIds);
+
+  res.json({
+    success: true,
+    data: {
+      transaction,
+      orders: createdOrders,
+    },
+  });
+});
+
+// GET /transactions/:id
+router.get("/:id", requireAuth, async (req, res) => {
+  const supabase = getUserClient(req.token);
+
+  const { data: transaction, error } = await supabase
+    .from("transactions")
+    .select("*, addresses(*)")
+    .eq("id", req.params.id)
+    .single();
+
+  if (error) {
+    return res.status(404).json({
+      success: false,
+      error: { code: "NOT_FOUND", message: "Transaction not found" },
+    });
+  }
+
+  // Get orders in this transaction
+  const { data: orders } = await supabase
+    .from("orders")
+    .select("*, profiles!seller_id(name, rating)")
+    .eq("transaction_id", req.params.id);
+
+  res.json({
+    success: true,
+    data: { ...transaction, orders },
+  });
+});
+
+// POST /transactions/:id/pay
+router.post("/:id/pay", requireAuth, async (req, res) => {
+  const { payment_proof_url } = req.body;
+
+  const supabase = getUserClient(req.token);
+
+  const { data, error } = await supabase
+    .from("transactions")
+    .update({
+      payment_status: "paid",
+      payment_proof_url,
+      paid_at: new Date().toISOString(),
+    })
+    .eq("id", req.params.id)
+    .select()
+    .single();
+
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      error: { code: "VALIDATION_ERROR", message: error.message },
+    });
+  }
+
+  // Create notifications buat seller
+  const { data: orders } = await supabaseAdmin
+    .from("orders")
+    .select("seller_id, product_name")
+    .eq("transaction_id", req.params.id);
+
+  if (orders?.length) {
+    const notifications = orders.map((o) => ({
+      user_id: o.seller_id,
+      type: "order",
+      title: "Pesanan Baru!",
+      message: `Pembeli telah membayar untuk "${o.product_name}". Silakan kirim barang.`,
+    }));
+    await supabaseAdmin.from("notifications").insert(notifications);
+  }
+
+  res.json({ success: true, data });
+});
+
+// POST /transactions/:id/cancel
+router.post("/:id/cancel", requireAuth, async (req, res) => {
+  const supabase = getUserClient(req.token);
+
+  const { data, error } = await supabase
+    .from("transactions")
+    .update({ payment_status: "cancelled" })
+    .eq("id", req.params.id)
+    .select()
+    .single();
+
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      error: { code: "VALIDATION_ERROR", message: error.message },
+    });
+  }
+
+  // Update related orders
+  await supabaseAdmin
+    .from("orders")
+    .update({ status: "Dibatalkan" })
+    .eq("transaction_id", req.params.id);
+
+  res.json({ success: true, data });
+});
+
+export default router;
+</file>
+
+<file path="src/routes/users.routes.js">
+import { Router } from 'express'
+import { supabaseAnon, supabaseAdmin, getUserClient } from '../config/supabase.js'
+import { requireAuth } from '../middleware/auth.js'
+
+const router = Router()
+
+// GET /users/me
+router.get('/me', requireAuth, async (req, res) => {
+  const { data, error } = await supabaseAdmin
+    .from('profiles')
+    .select('*')
+    .eq('id', req.user.id)
+    .single()
+
+  if (error) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'Profile not found' }
+    })
+  }
+
+  res.json({ success: true, data })
+})
+
+// GET /users/me/stats
+router.get('/me/stats', requireAuth, async (req, res) => {
+  const userId = req.user.id
+
+  // Count purchased orders (status = Selesai)
+  const { count: purchased } = await supabaseAdmin
+    .from('orders')
+    .select('*', { count: 'exact', head: true })
+    .eq('buyer_id', userId)
+    .eq('status', 'Selesai')
+
+  // Count sold orders
+  const { count: sold } = await supabaseAdmin
+    .from('orders')
+    .select('*', { count: 'exact', head: true })
+    .eq('seller_id', userId)
+    .eq('status', 'Selesai')
+
+  // Count wishlist
+  const { count: wishlist } = await supabaseAdmin
+    .from('wishlist')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+
+  res.json({
+    success: true,
+    data: {
+      purchased: purchased || 0,
+      sold: sold || 0,
+      wishlist: wishlist || 0
+    }
+  })
+})
+
+// GET /users/me/products (seller's own listings, includes unavailable)
+router.get('/me/products', requireAuth, async (req, res) => {
+  const supabase = getUserClient(req.token)
+
+  const { data, error } = await supabase
+    .from('products')
+    .select('*, categories(name, slug, type)')
+    .eq('seller_id', req.user.id)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    return res.status(500).json({
+      success: false,
+      error: { code: 'SERVER_ERROR', message: error.message }
+    })
+  }
+
+  // Count active orders per product (Diproses + Dikirim) so the UI can show progress
+  const productIds = (data || []).map(p => p.id)
+  let pendingMap = {}
+  if (productIds.length) {
+    const { data: orders } = await supabaseAdmin
+      .from('orders')
+      .select('product_id, status')
+      .in('product_id', productIds)
+      .in('status', ['Diproses', 'Dikirim'])
+
+    for (const o of orders || []) {
+      pendingMap[o.product_id] = (pendingMap[o.product_id] || 0) + 1
+    }
+  }
+
+  const enriched = (data || []).map(p => ({
+    ...p,
+    pending_orders: pendingMap[p.id] || 0
+  }))
+
+  res.json({ success: true, data: enriched })
+})
+
+// GET /users/:id (public — info seller)
+router.get('/:id', async (req, res) => {
+  const { data, error } = await supabaseAnon
+    .from('profiles')
+    .select('id, name, avatar_url, city, rating, total_sold, bio')
+    .eq('id', req.params.id)
+    .single()
+
+  if (error) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'User not found' }
+    })
+  }
+
+  res.json({ success: true, data })
+})
+
+// PATCH /users/me
+router.patch('/me', requireAuth, async (req, res) => {
+  const { name, phone, bio, avatar_url, city } = req.body
+  const supabase = getUserClient(req.token)
+
+  const updates = {}
+  if (name !== undefined) updates.name = name
+  if (phone !== undefined) updates.phone = phone
+  if (bio !== undefined) updates.bio = bio
+  if (avatar_url !== undefined) updates.avatar_url = avatar_url
+  if (city !== undefined) updates.city = city
+  updates.updated_at = new Date().toISOString()
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(updates)
+    .eq('id', req.user.id)
+    .select()
+    .single()
+
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: error.message }
+    })
+  }
+
+  res.json({ success: true, data })
+})
+
+export default router
+</file>
+
+<file path="src/routes/orders.routes.js">
+import { Router } from 'express'
+import { getUserClient, supabaseAdmin } from '../config/supabase.js'
+import { requireAuth } from '../middleware/auth.js'
+
+const router = Router()
+
+// BUG-004 FIX: /sales and /sales/:id/ship MUST be declared BEFORE /:id routes
+// Otherwise Express treats "sales" as an :id param and runs the wrong handler
+
+// GET /orders/sales?status=Diproses (seller orders)
+router.get('/sales', requireAuth, async (req, res) => {
+  try {
+    const { status } = req.query
+    const supabase = getUserClient(req.token)
+
+    let query = supabase
+      .from('orders')
+      .select('*, buyer:profiles!buyer_id(name)')
+      .eq('seller_id', req.user.id)
+      .order('created_at', { ascending: false })
+
+    if (status) query = query.eq('status', status)
+
+    const { data, error } = await query
+
+    if (error) {
+      return res.status(500).json({
+        success: false,
+        error: { code: 'SERVER_ERROR', message: error.message }
+      })
+    }
+
+    res.json({ success: true, data })
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: err.message } })
+  }
+})
+
+// PATCH /orders/sales/:id/ship (seller input resi)
+router.patch('/sales/:id/ship', requireAuth, async (req, res) => {
+  try {
+    const { tracking_number } = req.body
+
+    if (!tracking_number) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'tracking_number required' }
+      })
+    }
+
+    const supabase = getUserClient(req.token)
+
+    const { data: order } = await supabase
+      .from('orders')
+      .select('status, seller_id, buyer_id, product_name')
+      .eq('id', req.params.id)
+      .single()
+
+    if (!order || order.seller_id !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Not your order' }
+      })
+    }
+
+    const { data, error } = await supabase
+      .from('orders')
+      .update({
+        status: 'Dikirim',
+        tracking_number,
+        shipped_at: new Date().toISOString()
+      })
+      .eq('id', req.params.id)
+      .select()
+      .single()
+
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: error.message }
+      })
+    }
+
+    await supabaseAdmin.from('notifications').insert({
+      user_id: order.buyer_id,
+      type: 'order',
+      title: 'Pesanan Dikirim',
+      message: `"${order.product_name}" telah dikirim. No. resi: ${tracking_number}`
+    })
+
+    res.json({ success: true, data })
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: err.message } })
+  }
+})
+
+// GET /orders?status=Dikirim (buyer history)
+router.get('/', requireAuth, async (req, res) => {
+  try {
+    const { status } = req.query
+    const supabase = getUserClient(req.token)
+
+    let query = supabase
+      .from('orders')
+      .select('*, seller:profiles!seller_id(name)')
+      .eq('buyer_id', req.user.id)
+      .order('created_at', { ascending: false })
+
+    if (status) query = query.eq('status', status)
+
+    const { data, error } = await query
+
+    if (error) {
+      return res.status(500).json({
+        success: false,
+        error: { code: 'SERVER_ERROR', message: error.message }
+      })
+    }
+
+    res.json({ success: true, data })
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: err.message } })
+  }
+})
+
+// GET /orders/:id
+router.get('/:id', requireAuth, async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('orders')
+      .select(`
+        *,
+        seller:profiles!seller_id(name, rating, city),
+        buyer:profiles!buyer_id(name)
+      `)
+      .eq('id', req.params.id)
+      .single()
+
+    if (error) {
+      console.log('ORDER DETAIL ERROR:', error)
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Order not found', detail: error.message }
+      })
+    }
+
+    // Cek user yg login adalah buyer atau seller dari order ini
+    if (data.buyer_id !== req.user.id && data.seller_id !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Not your order' }
+      })
+    }
+
+    res.json({ success: true, data })
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: err.message } })
+  }
+})
+
+// PATCH /orders/:id/cancel (buyer)
+router.patch('/:id/cancel', requireAuth, async (req, res) => {
+  try {
+    const supabase = getUserClient(req.token)
+
+    const { data: order } = await supabase
+      .from('orders')
+      .select('status, buyer_id')
+      .eq('id', req.params.id)
+      .single()
+
+    if (!order || order.buyer_id !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Not your order' }
+      })
+    }
+
+    if (order.status !== 'Diproses') {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'Can only cancel orders in Diproses status' }
+      })
+    }
+
+    const { data, error } = await supabase
+      .from('orders')
+      .update({ status: 'Dibatalkan' })
+      .eq('id', req.params.id)
+      .select()
+      .single()
+
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: error.message }
+      })
+    }
+
+    res.json({ success: true, data })
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: err.message } })
+  }
+})
+
+// PATCH /orders/:id/complete (buyer mark received)
+router.patch('/:id/complete', requireAuth, async (req, res) => {
+  try {
+    const supabase = getUserClient(req.token)
+
+    const { data: order } = await supabase
+      .from('orders')
+      .select('status, buyer_id, seller_id')
+      .eq('id', req.params.id)
+      .single()
+
+    if (!order || order.buyer_id !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Not your order' }
+      })
+    }
+
+    if (order.status !== 'Dikirim') {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'Order must be in Dikirim status' }
+      })
+    }
+
+    const { data, error } = await supabase
+      .from('orders')
+      .update({
+        status: 'Selesai',
+        completed_at: new Date().toISOString()
+      })
+      .eq('id', req.params.id)
+      .select()
+      .single()
+
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: error.message }
+      })
+    }
+
+    // Manual increment total_sold (skip RPC biar ga error)
+    const { data: seller } = await supabaseAdmin.from('profiles').select('total_sold').eq('id', order.seller_id).single()
+    await supabaseAdmin.from('profiles').update({ total_sold: (seller?.total_sold || 0) + 1 }).eq('id', order.seller_id)
+
+    res.json({ success: true, data })
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: err.message } })
+  }
+})
+
+export default router
+</file>
+
+</files>
